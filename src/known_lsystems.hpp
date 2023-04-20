@@ -1,4 +1,4 @@
-#include "Lsystem.h"
+#include "lsystem.h"
 
 Lsystem sierpinski_triangle("F-G-G", {rule{"F", "F-G+F+G-F"}, rule{"G", "GG"}},
                             120);

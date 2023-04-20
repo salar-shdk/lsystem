@@ -14,3 +14,4 @@ install(FILES lsystem.h DESTINATION include)
 
 add_executable(lsystem-test ${TEST_SOURCE_LIST})
 target_link_libraries(lsystem-test lsystem)
+target_link_directories(lsystem-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/src/)
