@@ -55,17 +55,18 @@ void Lsystem::fix_boundary() {
   this->current_boundary.center.y =
       (this->current_boundary.min.y + this->current_boundary.max.y) / 2.f;
 
-  float offset = this->current_boundary.max.x - this->current_boundary.center.x;
-  if (offset < this->current_boundary.max.y - this->current_boundary.center.y)
-    offset = this->current_boundary.max.y - this->current_boundary.center.y;
-  std::cout << "offset:\t" << offset << "\n";
-
+  float offset =
+      max(this->current_boundary.max.x - this->current_boundary.center.x,
+          this->current_boundary.max.y - this->current_boundary.center.y);
+  std::cout << "offset:\t" << offset << "\t" << to_string(current_boundary.min)
+            << "\t" << to_string(current_boundary.max) << "\n";
+  offset /= 2;
+  glm::mat4 scale_matrix =
+      glm::scale(glm::mat4{1.f}, glm::vec3{1.f / offset, 1.f / offset, 0.f}) *
+      glm::translate(glm::mat4{1.f}, -1.f * this->current_boundary.center);
 
   for (auto &mat : transformations) {
-    glm::mat4 scale_matrix =
-        glm::scale(glm::mat4{1.f}, glm::vec3{1.f / offset, 1.f / offset, 0.f}) *
-   glm::translate(glm::mat4{1.f}, -1.f * this->current_boundary.center);
-        //glm::translate(glm::mat4{1.f}, -1.f * glm::vec3(mat[3]));
+    // glm::translate(glm::mat4{1.f}, -1.f * glm::vec3(mat[3]));
     mat *= scale_matrix;
     mat[3][0] /= offset;
     mat[3][1] /= offset;
@@ -138,8 +139,7 @@ void Lsystem::next() {
 
 vector<glm::vec3> sub_geometery(size_t start, size_t end, string current_string,
                                 float angle, promise<boundary> boundary_promise,
-                                promise<float> rotate_promise,
-                                promise<glm::vec3> translate_promise) {
+                                promise<glm::mat4> matrix_promise) {
   vector<glm::vec3> points;
   glm::vec3 last_point{0.f, 0.f, 0.f};
   float delta_angle = angle * PI / 180;
@@ -160,18 +160,16 @@ vector<glm::vec3> sub_geometery(size_t start, size_t end, string current_string,
       last_point[1] += sinf(current_angle);
       points.push_back(last_point);
     }
-    if (last_point.x < current_boundary.min.x)
-      current_boundary.min.x = last_point.x;
-    if (last_point.y < current_boundary.min.y)
-      current_boundary.min.y = last_point.y;
-    if (last_point.x > current_boundary.max.x)
-      current_boundary.max.x = last_point.x;
-    if (last_point.y > current_boundary.max.y)
-      current_boundary.max.y = last_point.y;
+    current_boundary.min.x = min(last_point.x, current_boundary.min.x);
+    current_boundary.min.y = min(last_point.y, current_boundary.min.y);
+    current_boundary.max.x = max(last_point.x, current_boundary.max.x);
+    current_boundary.max.y = max(last_point.y, current_boundary.max.y);
   }
 
-  rotate_promise.set_value(current_angle);
-  translate_promise.set_value(last_point);
+  matrix_promise.set_value(
+      glm::translate(glm::mat4{1.f}, last_point) *
+      glm::rotate(glm::mat4{1.f}, current_angle, glm::vec3{0.f, 0.f, 1.f}));
+
   boundary_promise.set_value(current_boundary);
   return points;
 }
@@ -182,10 +180,8 @@ vector<vector<glm::vec3>> Lsystem::get_geometry(float iteration) {
   vector<future<vector<glm::vec3>>> results;
   vector<promise<boundary>> boundaries_promise;
   vector<future<boundary>> boundaries_future;
-  vector<promise<float>> rotate_promise;
-  vector<future<float>> rotate_future;
-  vector<promise<glm::vec3>> translate_promise;
-  vector<future<glm::vec3>> translate_future;
+  vector<promise<glm::mat4>> matrix_promise;
+  vector<future<glm::mat4>> matrix_future;
 
   int n_threads =
       min(num_threads, static_cast<int>(1 + current_string.size() / 8));
@@ -193,21 +189,16 @@ vector<vector<glm::vec3>> Lsystem::get_geometry(float iteration) {
   for (uint8_t i = 0; i < n_threads; i++) {
     boundaries_promise.emplace_back();
     boundaries_future.push_back(boundaries_promise[i].get_future());
-    rotate_promise.emplace_back();
-    rotate_future.push_back(rotate_promise[i].get_future());
-    translate_promise.emplace_back();
-    translate_future.push_back(translate_promise[i].get_future());
+    matrix_promise.emplace_back();
+    matrix_future.push_back(matrix_promise[i].get_future());
 
     results.emplace_back(async(
         launch::async, sub_geometery, i * current_string.size() / n_threads,
         (i + 1) * current_string.size() / n_threads, current_string,
-        this->angle, move(boundaries_promise[i]), move(rotate_promise[i]),
-        move(translate_promise[i])));
+        this->angle, move(boundaries_promise[i]), move(matrix_promise[i])));
   }
 
   transformations.clear();
-  glm::vec3 last_point{0.f, 0.f, 0.f};
-  float last_angle = 0.f;
   for (size_t i = 0; i < results.size(); i++) {
     vector<glm::vec3> result = results[i].get();
     // output.insert(output.end(), result.begin(), result.end());
@@ -216,33 +207,34 @@ vector<vector<glm::vec3>> Lsystem::get_geometry(float iteration) {
     if (i == 0)
       transformations.push_back(glm::mat4(1.f));
     else {
-      last_point += translate_future[i - 1].get();
-      last_angle += rotate_future[i - 1].get();
-      transformations.push_back(
-          glm::translate(glm::mat4{1.f}, last_point) *
-          glm::rotate(glm::mat4{1.f}, last_angle, glm::vec3{0.f, 0.f, 1.f}));
+      transformations.push_back(transformations[i - 1] *
+                                matrix_future[i - 1].get());
     }
-    cout << to_string(last_point) << "\t" << last_angle << "\n"
-         << to_string(transformations[i]) << "\n\n";
-
+    cout << to_string(transformations[i]) << "\n\n";
     boundary sub_boundary = boundaries_future[i].get();
+    cout << "boundary before:\t" << to_string(sub_boundary.min) << "\t"
+         << to_string(sub_boundary.max) << "\n";
     sub_boundary.min =
         glm::vec3(transformations[i] * glm::vec4(current_boundary.min, 1.f));
     sub_boundary.max =
         glm::vec3(transformations[i] * glm::vec4(current_boundary.max, 1.f));
-    if (sub_boundary.min.x < current_boundary.min.x)
-      current_boundary.min.x = sub_boundary.min.x;
-    if (sub_boundary.min.y < current_boundary.min.y)
-      current_boundary.min.y = sub_boundary.min.y;
-    if (sub_boundary.max.x > current_boundary.max.x)
-      current_boundary.max.x = sub_boundary.max.x;
-    if (sub_boundary.max.y > current_boundary.max.y)
-      current_boundary.max.y = sub_boundary.max.y;
+
+    cout << "boundary after:\t" << to_string(sub_boundary.min) << "\t"
+         << to_string(sub_boundary.max) << "\n";
+    current_boundary.min.x = min(current_boundary.min.x,
+                                 min(sub_boundary.min.x, sub_boundary.max.x));
+    current_boundary.min.y = min(current_boundary.min.y,
+                                 min(sub_boundary.min.y, sub_boundary.max.y));
+    current_boundary.max.x = max(current_boundary.max.x,
+                                 max(sub_boundary.min.x, sub_boundary.max.x));
+    current_boundary.max.y = max(current_boundary.max.y,
+                                 max(sub_boundary.min.y, sub_boundary.max.y));
   }
   fix_boundary();
 
+  int i = 0;
   for (auto &t : transformations)
-    cout << to_string(t) << "\n\n";
+    cout << i++ << ":\t" << to_string(t) << "\n\n";
 
   return output;
 }
