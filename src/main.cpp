@@ -2,6 +2,7 @@
 #include "lsystem.h"
 #include <NumCpp.hpp>
 #include <chrono>
+#include <glm/gtx/string_cast.hpp>
 #include <string>
 #include <vector>
 
@@ -22,10 +23,13 @@ int main(int argc, char *argv[]) {
   std::chrono::time_point<std::chrono::system_clock> time_b =
       std::chrono::system_clock::now();
   std::cout << "get:" << (time_b - time_a).count() << "\n";
-  std::cout << sierpinski_triangle.get_geometry(stoi(argv[1])).size();
+  auto result = sierpinski_triangle.get_geometry(stoi(argv[1]));
   std::chrono::time_point<std::chrono::system_clock> time_c =
       std::chrono::system_clock::now();
   std::cout << "get geom:" << (time_c - time_b).count() << "\n";
+  // for (auto &vec : result)
+  // for (auto &point : vec)
+  // cout << to_string(point) << endl;
 
   return 0;
 }
