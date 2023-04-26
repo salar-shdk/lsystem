@@ -40,7 +40,8 @@ Lsystem::Lsystem(string start, vector<rule> rules, float angle,
   this->angle = angle;
   this->num_threads = num_threads;
   current_iteration = 0;
-  current_string = start;
+  current_string.clear();
+  current_string.push_back(&start);
   current_boundary.min = glm::vec3{0.f};
   current_boundary.max = glm::vec3{0.f};
   current_boundary.center = glm::vec3{0.f};
@@ -77,7 +78,7 @@ void Lsystem::fix_boundary() {
 
 // cpp thread with string
 
-string Lsystem::get(float iteration) {
+vector<string *> Lsystem::get(float iteration) {
   if (static_cast<int>(iteration) >= current_iteration) {
     while (static_cast<int>(iteration) > current_iteration) {
       this->next();
@@ -86,7 +87,8 @@ string Lsystem::get(float iteration) {
     return current_string;
   } else {
     current_iteration = 0;
-    current_string = start;
+    current_string.clear();
+    current_string.push_back(&start);
     current_boundary.min = glm::vec3{0.f};
     current_boundary.max = glm::vec3{0.f};
     current_boundary.center = glm::vec3{0.f};
@@ -94,46 +96,64 @@ string Lsystem::get(float iteration) {
   }
 }
 
-string sub_next(size_t start, size_t end, string current_string,
-                vector<rule> rules) {
-  string output = "";
+size_t SUB_STRING_SIZE = 110000;
+vector<string *> sub_next(size_t start, size_t end, vector<string *> &strings,
+                          vector<rule> &rules) {
+  // cout << "start: " << start << "\tend: " << end << endl;
+  vector<string *> result;
+  size_t max_rule_length = 0;
+  for (auto &rule : rules)
+    if (rule.replacement.size() > max_rule_length)
+      max_rule_length = rule.replacement.size();
+
+  string *output = new string("");
   // cout << start << "\t" << end << "\n";
-  for (size_t i = start; i < end; i++) {
-    bool found = false;
-    for (auto &rule : rules) {
-      try {
-        if (rule.sign == current_string.substr(i, rule.sign.size())) {
-          output += rule.replacement;
-          i += rule.sign.size() - 1;
-          found = true;
-          break;
+  for (size_t s = start; s < end; s++) {
+    for (size_t i = 0; i < strings[s]->size(); i++) {
+      bool found = false;
+      for (auto &rule : rules) {
+        try {
+          if (rule.sign == strings[s]->substr(i, rule.sign.size())) {
+            *output += rule.replacement;
+            i += rule.sign.size() - 1;
+            found = true;
+            break;
+          }
+        } catch (const out_of_range &e) {
         }
-      } catch (const out_of_range &e) {
+      }
+      if (!found)
+        *output += strings[s]->at(i);
+      if (SUB_STRING_SIZE - output->size() < max_rule_length) {
+        result.push_back(output);
+        output = new string("");
       }
     }
-    if (!found)
-      output += current_string[i];
   }
-  return output;
+  result.push_back(output);
+  return result;
 }
 
 void Lsystem::next() {
   // cout << "next\n";
   current_iteration++;
-  string output = "";
+  vector<string *> output;
 
-  vector<future<string>> results;
-  int n_threads =
-      min(num_threads, static_cast<int>(1 + current_string.size() / 8));
+  vector<future<vector<string *>>> results;
+  int n_threads = min(num_threads, static_cast<int>(current_string.size()));
+  // min(num_threads, static_cast<int>(1 + current_string.size() / 8));
   // cout << n_threads << "\t" << current_string.size() << "\n";
   for (uint8_t i = 0; i < n_threads; i++) {
-    results.emplace_back(async(
-        launch::async, sub_next, i * current_string.size() / n_threads,
-        (i + 1) * current_string.size() / n_threads, current_string, rules));
+    results.emplace_back(async(launch::async, sub_next,
+                               i * current_string.size() / n_threads,
+                               (i + 1) * current_string.size() / n_threads,
+                               ref(current_string), ref(rules)));
   }
 
-  for (auto &result : results)
-    output += result.get();
+  for (auto &result : results) {
+    vector<string *> result_pointers = result.get();
+    output.insert(output.end(), result_pointers.begin(), result_pointers.end());
+  }
 
   current_string = output;
 }
@@ -193,10 +213,10 @@ vector<vector<glm::vec3>> Lsystem::get_geometry(float iteration) {
     matrix_promise.emplace_back();
     matrix_future.push_back(matrix_promise[i].get_future());
 
-    results.emplace_back(async(
-        launch::async, sub_geometery, i * current_string.size() / n_threads,
-        (i + 1) * current_string.size() / n_threads, current_string,
-        this->angle, move(boundaries_promise[i]), move(matrix_promise[i])));
+    // results.emplace_back(async(
+    // launch::async, sub_geometery, i * current_string.size() / n_threads,
+    //(i + 1) * current_string.size() / n_threads, current_string,
+    // this->angle, move(boundaries_promise[i]), move(matrix_promise[i])));
   }
 
   transformations.clear();

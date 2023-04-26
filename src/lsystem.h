@@ -27,7 +27,7 @@ public:
 
   boundary get_boundary();
   void fix_boundary();
-  std::string get(float iteration);
+  std::vector<std::string *> get(float iteration);
   std::vector<std::vector<glm::vec3>> get_geometry(float iteration);
   std::vector<glm::mat4> transformations;
 
@@ -37,7 +37,7 @@ private:
   float angle;
   int current_iteration;
   int num_threads;
-  std::string current_string;
+  std::vector<std::string *> current_string;
   boundary current_boundary;
   void next();
 };
