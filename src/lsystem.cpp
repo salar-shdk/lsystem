@@ -59,10 +59,6 @@ void Lsystem::fix_boundary() {
   float offset =
       max(this->current_boundary.max.x - this->current_boundary.center.x,
           this->current_boundary.max.y - this->current_boundary.center.y);
-  // std::cout << "offset:\t" << offset << "\t" <<
-  // to_string(current_boundary.min)
-  //<< "\t" << to_string(current_boundary.max) << "\n";
-  // offset /= 2;
   glm::mat4 scale_matrix =
       glm::scale(glm::mat4{1.f}, glm::vec3{1.f / offset, 1.f / offset, 0.f}) *
       glm::translate(glm::mat4{1.f}, -1.f * this->current_boundary.center);
@@ -99,7 +95,6 @@ vector<string *> Lsystem::get(float iteration) {
 size_t SUB_STRING_SIZE = 110000;
 vector<string *> sub_next(size_t start, size_t end, vector<string *> &strings,
                           vector<rule> &rules) {
-  // cout << "start: " << start << "\tend: " << end << endl;
   vector<string *> result;
   size_t max_rule_length = 0;
   for (auto &rule : rules)
@@ -107,7 +102,6 @@ vector<string *> sub_next(size_t start, size_t end, vector<string *> &strings,
       max_rule_length = rule.replacement.size();
 
   string *output = new string("");
-  // cout << start << "\t" << end << "\n";
   for (size_t s = start; s < end; s++) {
     for (size_t i = 0; i < strings[s]->size(); i++) {
       bool found = false;
@@ -135,13 +129,11 @@ vector<string *> sub_next(size_t start, size_t end, vector<string *> &strings,
 }
 
 void Lsystem::next() {
-  // cout << "next\n";
   current_iteration++;
   vector<string *> output;
 
   vector<future<vector<string *>>> results;
   int n_threads = min(num_threads, static_cast<int>(current_string.size()));
-  // min(num_threads, static_cast<int>(1 + current_string.size() / 8));
   // cout << n_threads << "\t" << current_string.size() << "\n";
   for (uint8_t i = 0; i < n_threads; i++) {
     results.emplace_back(async(launch::async, sub_next,
@@ -166,6 +158,7 @@ bool sub_geometery(size_t start, size_t end, vector<string *> &current_string,
   float delta_angle = angle * PI / 180;
   float current_angle = 0.f;
   boundary current_boundary{glm::vec3{0.f}, glm::vec3{0.f}, glm::vec3{0.f}};
+
   int output_index = 0;
   for (size_t s = start; s < end; s++) {
     for (size_t i = 0; i < current_string[s]->size(); i++) {
@@ -230,28 +223,18 @@ vector<vector<glm::vec3>> Lsystem::get_geometry(float iteration) {
 
   transformations.clear();
   for (size_t i = 0; i < results.size(); i++) {
-    // vector<glm::vec3> result = results[i].get();
     results[i].get();
-    // output.insert(output.end(), result.begin(), result.end());
-    // output.push_back(result);
     if (i == 0)
       transformations.push_back(glm::mat4(1.f));
     else {
       transformations.push_back(transformations[i - 1] * matrixes[i - 1]);
     }
-    // output.insert(output.end(), result.begin(), result.end());
-    // cout << to_string(transformations[i]) << "\n\n";
     boundary sub_boundary = boundaries[i];
-    // output.insert(output.end(), result.begin(), result.end());
-    // cout << "boundary before:\t" << to_string(sub_boundary.min) << "\t"
-    //<< to_string(sub_boundary.max) << "\n";
     sub_boundary.min =
         glm::vec3(transformations[i] * glm::vec4(current_boundary.min, 1.f));
     sub_boundary.max =
         glm::vec3(transformations[i] * glm::vec4(current_boundary.max, 1.f));
 
-    // cout << "boundary after:\t" << to_string(sub_boundary.min) << "\t"
-    //<< to_string(sub_boundary.max) << "\n";
     current_boundary.min.x = min(current_boundary.min.x,
                                  min(sub_boundary.min.x, sub_boundary.max.x));
     current_boundary.min.y = min(current_boundary.min.y,
@@ -262,10 +245,6 @@ vector<vector<glm::vec3>> Lsystem::get_geometry(float iteration) {
                                  max(sub_boundary.min.y, sub_boundary.max.y));
   }
   fix_boundary();
-
-  // int i = 0;
-  //  for (auto &t : transformations)
-  //  cout << i++ << ":\t" << to_string(t) << "\n\n";
 
   return output;
 }
